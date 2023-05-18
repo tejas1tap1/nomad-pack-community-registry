@@ -1,4 +1,5 @@
 [[- define "ingress_conf" -]]
+{{$server := make (map[string]string)}}
 {{- range services -}}
 {{- with service .Name -}}
 {{- with index . 0}}
@@ -47,6 +48,8 @@
     {{- end -}}
   {{- end -}}
   {{- if $enabled -}}
+  {{- if not (index $server $hostname) -}}
+  {{- $server[$hostname] = .Name}}
   {{- $upstream := .Name | toLower -}}
 # Configuration for service {{.Name}}.
 upstream {{$upstream}} {
@@ -85,6 +88,7 @@ server {
      proxy_pass http://{{$upstream}};
   }
 }
+{{- end -}}
   {{- else}}
 # Service {{.Name}} not enabled for ingress.
   {{end}}
