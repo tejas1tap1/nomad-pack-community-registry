@@ -1,11 +1,11 @@
 [[- define "ingress_conf" -]]
-{{$server := make (map[string]string)}}
+{{- $serverMap := dict -}}
 {{- range services -}}
 {{- with service .Name -}}
 {{- with index . 0}}
   {{- $enabled := false -}}
   {{- $hostname := "" -}}
-  {{- $path := "/" -}}
+  {{- $path := slice -}}
   {{- $port := [[.nomad_ingress_nginx.http_port]] -}}
   {{- $allow := "" -}}
   {{- $deny := "" -}}
@@ -15,7 +15,7 @@
       {{- $hostname = (index .ServiceMeta "nomad_ingress_hostname") -}}
     {{- end -}}
     {{- if (index .ServiceMeta "nomad_ingress_path") -}}
-      {{- $path = (index .ServiceMeta "nomad_ingress_path") -}}
+      {{- $path = split (index .ServiceMeta "nomad_ingress_path") "," -}}
     {{- end -}}
     {{- if (index .ServiceMeta "nomad_ingress_port") -}}
       {{- $port = (index .ServiceMeta "nomad_ingress_port") -}}
@@ -34,7 +34,7 @@
         {{- $hostname = (index $kv  1) -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_path" -}}
-        {{- $path = (index $kv  1) -}}
+        {{- $path = split (index $kv  1) "," -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_port" -}}
         {{- $port = (index $kv  1) -}}
@@ -43,38 +43,47 @@
         {{- $allow = (index $kv  1) -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_deny" -}}
-        {{- $ = (index $kv  1) -}}
+        {{- $deny = (index $kv  1) -}}
       {{- end -}}
     {{- end -}}
   {{- end -}}
   {{- if $enabled -}}
-  {{- if not (index $server $hostname) -}}
-  {{- $server[$hostname] = .Name}}
-  {{- $upstream := .Name | toLower -}}
-# Configuration for service {{.Name}}.
-upstream {{$upstream}} {
-  {{- range service .Name}}
+    {{- $upstream := .Name | toLower -}}
+    {{- if not (index $serverMap $upstream) -}}
+      {{- $serverMap[$upstream] = dict "hostname" $hostname "port" $port "allow" $allow "deny" $deny "path" $path -}}
+    {{- else -}}
+      {{- $serverMap[$upstream].path = append $serverMap[$upstream].path $path -}}
+    {{- end -}}
+  {{- end -}}
+{{end}}
+{{- end -}}
+{{end}}
+
+{{- range $server, $serverConfig := $serverMap }}
+# Configuration for service {{$server}}.
+upstream {{$server}} {
+  {{- range service $server }}
   server {{.Address}}:{{.Port}};
   {{- end}}
 }
 
 server {
-  listen {{$port}};
-  {{- if $hostname}}
-  server_name {{$hostname}};
+  listen {{$serverConfig.port}};
+  {{- if $serverConfig.hostname}}
+  server_name {{$serverConfig.hostname}};
   {{- end}}
 
-  {{- range ($allow | split ",")}}
+  {{- range ($serverConfig.allow | split ",")}}
   allow {{.}};
   {{- end}}
-  {{- if ne $allow ""}}
+  {{- if ne $serverConfig.allow ""}}
   deny all;
   {{- end}}
 
-  {{- range ($deny | split ",")}}
+  {{- range ($serverConfig.deny | split ",")}}
   deny {{.}};
   {{- end}}
-  {{- if ne $deny ""}}
+  {{- if ne $serverConfig.deny ""}}
   allow all;
   {{- end}}
 
@@ -84,15 +93,11 @@ server {
   proxy_set_header X-Forwarded-Host $host;
   proxy_set_header X-Forwarded-Port $server_port;
 
+  {{- range $path := $serverConfig.path }}
   location {{$path}} {
-     proxy_pass http://{{$upstream}};
+     proxy_pass http://{{$server}};
   }
+  {{- end }}
 }
 {{- end -}}
-  {{- else}}
-# Service {{.Name}} not enabled for ingress.
-  {{end}}
-{{end}}
-{{- end -}}
-{{end}}
 [[- end -]]
