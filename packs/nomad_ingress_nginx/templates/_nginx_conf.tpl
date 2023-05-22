@@ -5,14 +5,17 @@
 {{- with index . 0}}
   {{- $enabled := false -}}
   {{- $hostname := "" -}}
+  {{- $path := "/" -}}
   {{- $port := [[.nomad_ingress_nginx.http_port]] -}}
   {{- $allow := "" -}}
   {{- $deny := "" -}}
-  {{- $locations := slice -}}
   {{- if (index .ServiceMeta "nomad_ingress_enabled") -}}
     {{$enabled = true}}
     {{- if (index .ServiceMeta "nomad_ingress_hostname") -}}
       {{- $hostname = (index .ServiceMeta "nomad_ingress_hostname") -}}
+    {{- end -}}
+    {{- if (index .ServiceMeta "nomad_ingress_path") -}}
+      {{- $path = (index .ServiceMeta "nomad_ingress_path") -}}
     {{- end -}}
     {{- if (index .ServiceMeta "nomad_ingress_port") -}}
       {{- $port = (index .ServiceMeta "nomad_ingress_port") -}}
@@ -23,13 +26,15 @@
     {{- if (index .ServiceMeta "nomad_ingress_deny") -}}
       {{- $deny = (index .ServiceMeta "nomad_ingress_deny") -}}
     {{- end -}}
-    {{- $locations = (index .ServiceMeta "nomad_ingress_locations") -}}
   {{- else if .Tags | contains "nomad_ingress_enabled=true" -}}
     {{$enabled = true}}
     {{- range .Tags -}}
       {{- $kv := (. | split "=") -}}
       {{- if eq (index $kv 0) "nomad_ingress_hostname" -}}
         {{- $hostname = (index $kv  1) -}}
+      {{- end -}}
+      {{- if eq (index $kv 0) "nomad_ingress_path" -}}
+        {{- $path = (index $kv  1) -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_port" -}}
         {{- $port = (index $kv  1) -}}
@@ -38,50 +43,44 @@
         {{- $allow = (index $kv  1) -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_deny" -}}
-        {{- $deny = (index $kv  1) -}}
-      {{- end -}}
-      {{- if eq (index $kv 0) "nomad_ingress_locations" -}}
-        {{- $locations = (index $kv  1) -}}
+        {{- $ = (index $kv  1) -}}
       {{- end -}}
     {{- end -}}
   {{- end -}}
   {{- if $enabled -}}
     {{- $upstream := .Name | toLower -}}
-    {{- if not (index $serverMap $upstream) -}}
-      {{- $serverMap[$upstream] = dict "hostname" $hostname "port" $port "allow" $allow "deny" $deny "locations" (slice $locations) -}}
+    upstream {{$upstream}} {
+      {{- range service .Name }}
+      server {{.Address}}:{{port}};
+      {{- end}}
+    }
+    {{- if not (index $serverMap $hostname) -}}
+      {{- $serverMap[$hostname] = dict "port" $port "allow" $allow "deny" $deny "path" $path -}}
     {{- else -}}
-      {{- $serverMap[$upstream].locations = append $serverMap[$upstream].locations $locations -}}
+      {{- $serverMap[$hostname].path = append $serverMap[$hostname].path $path -}}
     {{- end -}}
   {{- end -}}
 {{end}}
 {{- end -}}
 {{end}}
 
-{{- range $server, $serverConfig := $serverMap }}
-# Configuration for service {{$server}}.
-upstream {{$server}} {
-  {{- range service $server }}
-  server {{.Address}}:{{.Port}};
-  {{- end}}
-}
-
 server {
-  listen {{$serverConfig.port}};
-  {{- if $serverConfig.hostname}}
-  server_name {{$serverConfig.hostname}};
+  listen {{$port}};
+  {{- if $hostname}}
+  server_name {{$hostname}};
   {{- end}}
 
-  {{- range ($serverConfig.allow | split ",")}}
+  {{- range ($allow | split ",")}}
   allow {{.}};
   {{- end}}
-  {{- if ne $serverConfig.allow ""}}
+  {{- if ne $allow ""}}
   deny all;
   {{- end}}
 
-  {{- range ($serverConfig.deny | split ",")}}
+  {{- range ($deny | split ",")}}
   deny {{.}};
   {{- end}}
-  {{- if ne $serverConfig.deny ""}}
+  {{- if ne $deny ""}}
   allow all;
   {{- end}}
 
@@ -91,11 +90,9 @@ server {
   proxy_set_header X-Forwarded-Host $host;
   proxy_set_header X-Forwarded-Port $server_port;
 
-  {{- range $location := $serverConfig.locations }}
-  location {{$location}} {
-     proxy_pass http://{{$server}};
+  location {{$path}} {
+     proxy_pass http://{{$upstream}};
   }
-  {{- end }}
 }
 {{- end -}}
 [[- end -]]
