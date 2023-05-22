@@ -15,7 +15,7 @@
       {{- $hostname = (index .ServiceMeta "nomad_ingress_hostname") -}}
     {{- end -}}
     {{- if (index .ServiceMeta "nomad_ingress_path") -}}
-      {{- $path = split (index .ServiceMeta "nomad_ingress_path") "," -}}
+      {{- $path = (index .ServiceMeta "nomad_ingress_path") -}}
     {{- end -}}
     {{- if (index .ServiceMeta "nomad_ingress_port") -}}
       {{- $port = (index .ServiceMeta "nomad_ingress_port") -}}
@@ -34,7 +34,7 @@
         {{- $hostname = (index $kv  1) -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_path" -}}
-        {{- $path = split (index $kv  1) "," -}}
+        {{- $path = (index $kv  1) -}}
       {{- end -}}
       {{- if eq (index $kv 0) "nomad_ingress_port" -}}
         {{- $port = (index $kv  1) -}}
